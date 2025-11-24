@@ -11,7 +11,7 @@ import Foundation
 ///   - exceptions: An array of PSLData representing domain names that are exceptions.
 ///   - wildcards: An array of PSLData representing domain names that are wildcards.
 ///   - normals: A set of unique domain names that are considered normal entries.
-internal struct PSLDataSet {
+struct PSLDataSet {
     let exceptions: [PSLData]
     let wildcards: [PSLData]
     let normals: Set<String>
@@ -26,7 +26,7 @@ internal struct PSLDataSet {
 ///   - tldParts: An array of PSLDataPart representing the TLD parts split by dots.
 ///   - priority: An integer representing the priority score to sort the dataset.
 ///     If the hostname matches more than one rule, the one with the highest priority prevails.
-internal struct PSLData {
+struct PSLData {
     /// The flag that indicates data is exception
     let isException: Bool
     /// TLD Parts split by dot
@@ -79,12 +79,12 @@ extension PSLData {
         /// Find the PSLDataPart that matches the host component
         let zipped: Zip2Sequence<[PSLDataPart], ArraySlice<String>> = zip(self.tldParts, droppedHostComponents)
         return zipped.allSatisfy { (pslData: PSLDataPart, hostComponent: String) in
-            return pslData.matches(component: hostComponent)
+            pslData.matches(component: hostComponent)
         }
     }
 
     func parse(hostComponents: [String]) -> TLDResult {
-        let partsCount: Int = tldParts.count - (self.isException ? 1 : 0)
+        let partsCount: Int = self.tldParts.count - (self.isException ? 1 : 0)
         let delta: Int = hostComponents.count - partsCount
 
         /// Extract the host name to each level domain
@@ -139,7 +139,7 @@ extension PSLData: Comparable {
 /// The wildcard character * (asterisk) matches any valid sequence of characters in a hostname part.
 /// Wildcards are not restricted to appear only in the leftmost position,
 /// but they must wildcard an entire label. (I.e. *.*.foo is a valid rule: *bar.foo is not.)
-internal enum PSLDataPart {
+enum PSLDataPart {
     case wildcard
     case characters(String)
 

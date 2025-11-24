@@ -16,34 +16,20 @@ import Foundation
 /// - Throws:
 ///   - TLDExtractError.pslParseError if there is an error while parsing the public suffix list.
 public class TLDExtract {
-
     private let tldParser: TLDParser
 
     public init(useFrozenData: Bool = false) throws {
-        #if SWIFT_PACKAGE
-
         var data: Data
         if useFrozenData {
-            data = SPM_PSL.data(using: .utf8)!
+            let file = Bundle.module.url(forResource: "public_suffix_list_frozen", withExtension: "dat")!
+            data = try Data(contentsOf: file)
         } else {
-            let url: URL = URL(string: "https://publicsuffix.org/list/public_suffix_list.dat")!
+            let url = URL(string: "https://publicsuffix.org/list/public_suffix_list.dat")!
             data = try Data(contentsOf: url)
         }
 
-        let dataSet: PSLDataSet = try PSLParser().parse(data: data)
+        let dataSet: PSLDataSet = try PSLParser().parse(data: data, useFrozenData: useFrozenData)
         self.tldParser = TLDParser(dataSet: dataSet)
-
-        #else
-
-        let url: URL = Bundle.current.url(
-            forResource: useFrozenData ? "public_suffix_list_frozen" : "public_suffix_list",
-            withExtension: "dat"
-        )!
-        let data: Data = try Data(contentsOf: url)
-        let dataSet = try PSLParser().parse(data: data)
-        self.tldParser = TLDParser(dataSet: dataSet)
-
-        #endif
     }
 
     /// Parameters:
@@ -72,7 +58,6 @@ public protocol TLDExtractable {
 /// - Parameters:
 ///   - unicodeString: A string that may contain a URL encoded in Unicode format.
 extension URL: TLDExtractable {
-
     init?(unicodeString: String) {
         if let encodedUrl: String = unicodeString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             self.init(string: encodedUrl)
@@ -100,8 +85,8 @@ extension URL: TLDExtractable {
 /// - Returns: A string representing the hostname, or `nil` if it cannot be extracted.
 extension String: TLDExtractable {
     public var hostname: String? {
-        let schemePattern: String = "^(\\p{L}+:)?//"
-        let hostPattern: String = "([0-9\\p{L}][0-9\\p{L}-]{1,61}\\.?)?   ([\\p{L}-]*  [0-9\\p{L}]+)  (?!.*:$).*$".replace(" ", "")
+        let schemePattern = "^(\\p{L}+:)?//"
+        let hostPattern = "([0-9\\p{L}][0-9\\p{L}-]{1,61}\\.?)?   ([\\p{L}-]*  [0-9\\p{L}]+)  (?!.*:$).*$".replace(" ", "")
         if self.matches(schemePattern) {
             let components: [String] = self.replace(schemePattern, "").components(separatedBy: "/")
             guard let component: String = components.first, !component.isEmpty else { return nil }
@@ -122,7 +107,7 @@ extension String: TLDExtractable {
 /// - Methods:
 ///   - matches(_:) : Checks if the string matches the given regular expression pattern.
 ///   - replace(_:_:): Replaces occurrences of the specified pattern in the string with a given replacement string.
-fileprivate extension String {
+private extension String {
     func matches(_ pattern: String) -> Bool {
         guard let regex: NSRegularExpression = try? NSRegularExpression(pattern: pattern) else { return false }
         return regex.matches(in: self, range: NSRange(location: 0, length: self.count)).count > 0

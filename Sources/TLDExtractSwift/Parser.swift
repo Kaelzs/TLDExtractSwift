@@ -3,61 +3,66 @@
 //
 
 import Foundation
-
-#if SWIFT_PACKAGE
 import Punycode
-#endif
 
-internal class PSLParser {
+class PSLParser {
+    var exceptions: [PSLData] = .init()
+    var wildcards: [PSLData] = .init()
+    var normals: Set<String> = .init()
 
-    var exceptions: [PSLData] = [PSLData]()
-    var wildcards: [PSLData] = [PSLData]()
-    var normals: Set<String> = Set<String>()
-
-    internal func addLine(_ line: String) {
+    func addLine(_ line: String) {
         if line.contains("*") {
             self.wildcards.append(PSLData(raw: line))
         } else if line.starts(with: "!") {
             self.exceptions.append(PSLData(raw: line))
-        } else if !line.isComment && !line.isEmpty {
+        } else {
             self.normals.insert(line)
         }
     }
 
-    internal func parse(data: Data?) throws -> PSLDataSet {
-        guard let data: Data = data, let str: String = String(data: data, encoding: .utf8), str.count > 0 else {
+    func parse(data: Data?, useFrozenData: Bool = false) throws -> PSLDataSet {
+        guard let data: Data = data, let str = String(data: data, encoding: .utf8), str.count > 0 else {
             throw TLDExtractError.pslParseError(message: nil)
         }
-        for line: String in str.components(separatedBy: .newlines) {
-            if line.isComment { continue }
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+
+        for line in str.components(separatedBy: .newlines) {
+            if useFrozenData {
+                guard !line.isEmpty else {
+                    continue
+                }
+            } else {
+                guard !line.starts(with: "//"),
+                      !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    continue
+                }
+            }
 
             self.addLine(line)
 
-            // this does the same thing as update-psl.py
-            #if SWIFT_PACKAGE
-            if let encoded: String = line.idnaEncoded {
-                self.addLine(encoded)
+            if !useFrozenData {
+                if let encoded = line.idnaEncoded,
+                   encoded != line {
+                    self.addLine(encoded)
+                }
             }
-            #endif
         }
+
         return PSLDataSet(
-            exceptions: exceptions,
-            wildcards: wildcards,
-            normals: normals
+            exceptions: self.exceptions,
+            wildcards: self.wildcards,
+            normals: self.normals
         )
     }
 }
 
-internal class TLDParser {
-
+class TLDParser {
     private let pslDataSet: PSLDataSet
 
-    internal init(dataSet: PSLDataSet) {
+    init(dataSet: PSLDataSet) {
         self.pslDataSet = dataSet
     }
 
-    internal func parseExceptionsAndWildcards(host: String) -> TLDResult? {
+    func parseExceptionsAndWildcards(host: String) -> TLDResult? {
         let hostComponents: [String] = host.lowercased().components(separatedBy: ".")
         /// Search exceptions first, then search wildcards if not match
         let matchClosure: (PSLData) -> Bool = { $0.matches(hostComponents: hostComponents) }
@@ -65,7 +70,7 @@ internal class TLDParser {
         return pslData?.parse(hostComponents: hostComponents)
     }
 
-    internal func parseNormals(host: String) -> TLDResult? {
+    func parseNormals(host: String) -> TLDResult? {
         let tldSet: Set<String> = self.pslDataSet.normals
         /// Split the hostname to components
         let hostComponents = host.lowercased().components(separatedBy: ".")
@@ -80,7 +85,9 @@ internal class TLDParser {
             copiedHostComponents = copiedHostComponents.dropFirst()
         } while !tldSet.contains(topLevelDomain ?? "")
 
-        if topLevelDomain == host { topLevelDomain = nil }
+        if topLevelDomain == host {
+            topLevelDomain = nil
+        }
 
         /// Extract the host name to each level domain
         let rootDomainRange: Range<Int> = (copiedHostComponents.startIndex - 2)..<hostComponents.endIndex
@@ -89,7 +96,7 @@ internal class TLDParser {
         let secondDomainRange: Range<Int> = (rootDomainRange.lowerBound)..<(rootDomainRange.lowerBound + 1)
         let secondDomain: String? = secondDomainRange.startIndex >= 0 ? hostComponents[secondDomainRange].joined(separator: ".") : nil
 
-        let subDomainRange: Range<Int> = (hostComponents.startIndex)..<(max(secondDomainRange.lowerBound, hostComponents.startIndex))
+        let subDomainRange: Range<Int> = (hostComponents.startIndex)..<max(secondDomainRange.lowerBound, hostComponents.startIndex)
         let subDomain: String? = subDomainRange.endIndex >= 1 ? hostComponents[subDomainRange].joined(separator: ".") : nil
 
         return TLDResult(
